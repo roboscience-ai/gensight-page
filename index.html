@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GenSight — Unified Video Generation and 4D Perception for Embodied World Modeling</title>
+  <meta name="description" content="GenSight unifies future video generation and dense 4D perception (depth, embodiment segmentation, first-frame-relative 2D flow) in a single pretrained video diffusion transformer." />
+
+  <!-- Localized from CDN for offline use. Originals:
+       fonts.css          <- https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap
+       academicons.min.css<- https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css
+       fontawesome.min.css<- https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css
+       tailwind.min.js    <- https://cdn.tailwindcss.com (Play CDN v3.4.17) -->
+  <link rel="stylesheet" href="./static/css/fonts.css" />
+  <link rel="stylesheet" href="./static/css/academicons.min.css" />
+  <link rel="stylesheet" href="./static/css/fontawesome.min.css" />
+
+  <script src="./static/js/tailwind.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            display: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            ink: { 900:'#1C1917', 700:'#292524', 500:'#57534E', 400:'#78716C', 300:'#A8A29E', 100:'#E7E5E4', 50:'#F5F5F4' },
+            cream: '#FAF8F4',
+          },
+          animation: { 'blob-slow': 'blob 28s ease-in-out infinite' },
+          keyframes: {
+            blob: {
+              '0%,100%': { transform: 'translate(0,0) scale(1)' },
+              '33%': { transform: 'translate(30px,-20px) scale(1.05)' },
+              '66%': { transform: 'translate(-20px,20px) scale(0.97)' },
+            },
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html { scroll-behavior: smooth; overflow-x: hidden; }
+    section[id] { scroll-margin-top: 64px; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #FAF8F4; color: #1C1917;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+    h1,h2,h3,h4,h5,.font-display { font-family:'Inter',system-ui,sans-serif; letter-spacing:-0.018em; }
+    .num { font-variant-numeric: tabular-nums; letter-spacing:-0.025em; font-feature-settings:'tnum'; }
+    .wordmark { font-weight:700; letter-spacing:-0.03em; }
+    .font-mono, code, pre { font-family:'JetBrains Mono', ui-monospace, monospace; }
+    .accent-text { color:#52CCBA; }
+    .hero-accent-deep { color:#2FAF9E; text-decoration:underline; text-decoration-thickness:2px; text-underline-offset:.18em; }
+    .nav-link {
+      position:relative; padding:7px 10px; border-radius:9999px;
+      transition:color .2s ease, background-color .2s ease; white-space:nowrap;
+    }
+    .nav-link:hover { color:#1C1917; background:rgba(28,25,23,.04); }
+    .nav-link.active { color:#269F8E; background:rgba(82,204,186,.11); }
+    .nav-link.active::after {
+      content:''; position:absolute; left:50%; bottom:2px; width:4px; height:4px;
+      border-radius:9999px; background:#52CCBA; transform:translateX(-50%);
+      box-shadow:0 0 7px rgba(82,204,186,.65);
+    }
+    .nav-link-stack { display:inline-flex; flex-direction:column; align-items:center; line-height:1.05; }
+    .nav-link-stack small { font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.56rem; letter-spacing:.08em; text-transform:uppercase; opacity:.65; margin-top:2px; }
+    .nav-dropdown { position:relative; display:inline-flex; }
+    .nav-dropdown-menu {
+      position:absolute; top:calc(100% + 2px); left:50%; transform:translate(-50%, -5px);
+      min-width:150px; padding:6px; border-radius:14px; opacity:0; visibility:hidden; pointer-events:none;
+      background:rgba(255,255,255,.96); border:1px solid rgba(28,25,23,.09);
+      box-shadow:0 14px 30px -18px rgba(28,25,23,.35); transition:opacity .18s ease, transform .18s ease, visibility .18s ease;
+    }
+    .nav-dropdown:hover .nav-dropdown-menu, .nav-dropdown:focus-within .nav-dropdown-menu {
+      opacity:1; visibility:visible; pointer-events:auto; transform:translate(-50%, 0);
+    }
+    .nav-dropdown-menu a { display:block; padding:8px 12px; border-radius:9px; color:#57534E; font-size:.82rem; transition:background .18s ease, color .18s ease; }
+    .nav-dropdown-menu a:hover, .nav-dropdown-menu a:focus-visible { color:#1C1917; background:rgba(82,204,186,.12); outline:none; }
+    .comparisons-flow { display:flex; flex-direction:column; }
+    .comparisons-flow > .comparison-generation { order:1; }
+    .comparisons-flow > .comparison-generation-quant { order:2; }
+    .comparisons-flow > .comparison-perception { order:3; }
+    .comparisons-flow > .comparison-perception-quant { order:4; }
+    .comparisons-flow > .comparison-scene-flow { order:5; }
+
+    .blob { position:absolute; border-radius:9999px; filter:blur(120px); opacity:0.07; pointer-events:none; }
+    .glass {
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: blur(16px) saturate(110%); -webkit-backdrop-filter: blur(16px) saturate(110%);
+      border: 1px solid rgba(28,25,23,0.07);
+      box-shadow: 0 2px 14px -8px rgba(28,25,23,0.10);
+    }
+    .gradient-border {
+      position:relative; background:#FFF; border:1px solid rgba(28,25,23,0.08);
+      border-radius:24px; box-shadow:0 12px 32px -20px rgba(28,25,23,0.20);
+    }
+    .btn-ghost { background:rgba(28,25,23,0.04); border:1px solid rgba(28,25,23,0.08); transition:all .2s ease; }
+    .btn-ghost:hover { background:rgba(28,25,23,0.07); border-color:rgba(28,25,23,0.14); }
+    .hero-link {
+      position:relative; display:inline-flex; align-items:center; justify-content:center; gap:9px;
+      min-width:142px; padding:10px 20px; border-radius:9999px; background:rgba(255,255,255,.76);
+      border:1px solid rgba(28,25,23,.12); color:#292524; font-size:.9rem; font-weight:600;
+      letter-spacing:-.01em; box-shadow:0 6px 18px -13px rgba(28,25,23,.35);
+      transition:transform .25s ease, box-shadow .25s ease, background .25s ease;
+    }
+    .hero-link:hover { transform:translateY(-2px); background:#fff; box-shadow:0 10px 24px -14px rgba(28,25,23,.38); }
+    .author-link, .affiliation-link { color:inherit; text-decoration:none; }
+    .author-link:hover, .author-link:focus-visible, .affiliation-link:hover, .affiliation-link:focus-visible { color:#278a7d; }
+    .featured-link {
+      border:1px solid transparent;
+      background:linear-gradient(#fff,#fff) padding-box,
+        linear-gradient(110deg,rgba(82,204,186,.35),#52CCBA,#b9f5ec,#52CCBA,rgba(82,204,186,.35)) border-box;
+      background-size:100% 100%, 260% 100%;
+      box-shadow:0 8px 24px -12px rgba(82,204,186,.75), 0 0 0 3px rgba(82,204,186,.06);
+      animation:featured-shine 3.6s linear infinite;
+    }
+    .featured-link:hover { box-shadow:0 12px 30px -12px rgba(82,204,186,.95), 0 0 0 4px rgba(82,204,186,.09); }
+    .coming-soon { font-size:.7rem; font-weight:500; color:#478d84; }
+    .featured-star {
+      position:absolute; top:-10px; right:-8px; color:#52CCBA; font-size:1.15rem; line-height:1;
+      text-shadow:0 0 7px rgba(82,204,186,.9), 0 0 16px rgba(82,204,186,.55);
+      animation:star-twinkle 1.8s ease-in-out infinite;
+    }
+    .featured-star::after {
+      content:'✦'; position:absolute; top:11px; left:13px; font-size:.48rem; color:#8ce2d5;
+      animation:star-twinkle 1.8s .45s ease-in-out infinite;
+    }
+    @keyframes featured-shine { to { background-position:0 0, 260% 0; } }
+    @keyframes star-twinkle { 0%,100% { opacity:.55; transform:scale(.78) rotate(0deg); } 50% { opacity:1; transform:scale(1.12) rotate(12deg); } }
+    @media (prefers-reduced-motion:reduce) { .featured-link, .featured-star, .featured-star::after { animation:none; } }
+    .lift { transition: transform .4s cubic-bezier(.22,1,.36,1), box-shadow .4s ease; }
+    .lift:hover { transform:translateY(-3px); box-shadow:0 16px 32px -16px rgba(28,25,23,0.18); }
+    .stat-card { background:#FFF; border:1px solid rgba(28,25,23,0.06); box-shadow:0 1px 3px rgba(28,25,23,0.04); }
+
+    .reveal { opacity:0; transform:translateY(28px);
+      transition: opacity .9s cubic-bezier(.22,1,.36,1), transform .9s cubic-bezier(.22,1,.36,1); will-change:transform,opacity; }
+    .reveal.in { opacity:1; transform:translateY(0); }
+    [data-pcmp-input-panel].pcmp-input-hidden { display:none !important; }
+
+    /* ---- Tables ---- */
+    .ftable { width:100%; border-collapse:separate; border-spacing:0; font-size:.95rem;
+      font-variant-numeric:tabular-nums; letter-spacing:-0.008em; }
+    .ftable th, .ftable td { padding:13px 14px; text-align:center; vertical-align:middle; }
+    .ftable thead th { font-family:'JetBrains Mono',ui-monospace,monospace; font-weight:500; color:#57534E;
+      font-size:.68rem; text-transform:uppercase; letter-spacing:.1em; border-bottom:1px solid #E7E5E4; }
+    .ftable thead th.grp { border-bottom:0; padding-bottom:4px; color:#A8A29E; }
+    .ftable tbody tr { transition:background .25s ease; }
+    .ftable tbody tr:not(:last-child) td { border-bottom:1px solid #F5F5F4; }
+    .ftable tbody tr:hover { background:rgba(82,204,186,0.04); }
+    .ftable .name { text-align:left; font-weight:500; color:#292524; font-size:.95rem; white-space:nowrap; }
+    .ftable .num-cell { font-variant-numeric:tabular-nums; font-weight:500; color:#292524; letter-spacing:-0.015em; }
+    .ftable .highlight { background:rgba(82,204,186,0.12); }
+    .ftable tbody tr.highlight:hover { background:rgba(82,204,186,0.16); }
+    .ftable .best { font-weight:700; letter-spacing:-0.02em; }
+    .ftable .second { text-decoration:underline; text-underline-offset:3px; }
+    .ftable .sep td { padding:6px 14px; background:#FBFAF8; text-align:left;
+      font-family:'JetBrains Mono',monospace; font-size:.68rem; text-transform:uppercase;
+      letter-spacing:.14em; color:#A8A29E; }
+    .ftable .dim { color:#A8A29E; }
+
+    /* ---- Tabs ---- */
+    .subtab { padding:8px 20px; border-radius:9999px; font-size:.94rem; font-weight:600; letter-spacing:-0.01em;
+      color:#57534E; background:transparent; border:0; cursor:pointer; transition:all .2s ease; white-space:nowrap; }
+    .subtab:hover { color:#1C1917; }
+    .subtab:focus-visible { outline:2px solid #52CCBA; outline-offset:2px; }
+    .subtab.active { background:#52CCBA; color:#fff; box-shadow:0 6px 18px -7px rgba(82,204,186,.5); }
+    .subtab .st-sub { display:block; font-size:.68rem; font-weight:500; opacity:.7; letter-spacing:.02em; margin-top:1px; }
+
+    /* ---- Video grid ---- */
+    .vgrid { display:grid; gap:14px; }
+    .vcell { margin:0; }
+    .vwrap {
+      position:relative; border-radius:14px; overflow:hidden; background:#F0EEEA;
+      border:1px solid rgba(28,25,23,0.08); box-shadow:0 4px 16px -12px rgba(28,25,23,0.25);
+      aspect-ratio: 16 / 9;
+    }
+    .vwrap video { width:100%; height:100%; object-fit:contain; display:block; background:#F0EEEA; }
+    .video-fullscreen-overlay { position:fixed; inset:0; z-index:100; display:grid; place-items:center;
+      padding:24px; background:rgba(12,12,12,.96); }
+    .video-fullscreen-overlay .vwrap { width:min(100%,1200px); max-height:100%; border-color:rgba(255,255,255,.2); }
+    .video-fullscreen-overlay .vwrap video { background:#000; }
+    .video-fullscreen-close { position:absolute; top:16px; right:16px; z-index:2; width:34px; height:34px;
+      display:grid; place-items:center; border:0; border-radius:9999px; cursor:pointer;
+      background:rgba(255,255,255,.16); color:#fff; font-size:.9rem; }
+    .video-fullscreen-close:hover, .video-fullscreen-close:focus-visible { background:rgba(255,255,255,.28); }
+    .video-fullscreen-close:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+    .vfullscreen { position:absolute; top:7px; right:7px; z-index:3; width:30px; height:30px;
+      display:grid; place-items:center; border:0; border-radius:8px; cursor:pointer;
+      background:rgba(28,25,23,.65); color:#fff; font-size:.78rem; opacity:.85; }
+    .vfullscreen:hover, .vfullscreen:focus-visible { opacity:1; background:rgba(28,25,23,.85); }
+    .vfullscreen:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+    .vwrap.is-ref { border-color:rgba(28,25,23,0.16); }
+    .vwrap.is-ours { border-color:rgba(82,204,186,0.45); box-shadow:0 6px 20px -12px rgba(82,204,186,0.5); }
+    .vcap { display:flex; align-items:baseline; gap:7px; padding:7px 3px 0; flex-wrap:wrap; }
+    .vlabel { font-size:.84rem; font-weight:600; color:#292524; letter-spacing:-0.01em; }
+    .vwrap.is-ours + .vcap .vlabel { color:#52CCBA; }
+    .vtag { font-family:'JetBrains Mono',monospace; font-size:.62rem; text-transform:uppercase;
+      letter-spacing:.1em; color:#A8A29E; }
+    .rowlabel { font-family:'JetBrains Mono',monospace; font-size:.66rem; text-transform:uppercase;
+      letter-spacing:.14em; color:#78716C; padding:2px 0 6px; font-weight:500; }
+    .vbadge { position:absolute; top:7px; left:7px; z-index:2; padding:2px 8px; border-radius:9999px;
+      font-family:'JetBrains Mono',monospace; font-size:.6rem; font-weight:600; letter-spacing:.08em;
+      text-transform:uppercase; background:rgba(82,204,186,.92); color:#fff; }
+    .vbadge.ref { background:rgba(41,37,36,.72); }
+
+    .modecard { position:relative; overflow:hidden; border-radius:24px; padding:30px; background:#FFF;
+      border:1px solid rgba(28,25,23,0.08); box-shadow:0 4px 18px -10px rgba(28,25,23,0.10);
+      transition: transform .4s cubic-bezier(.22,1,.36,1), box-shadow .4s ease; }
+    .modecard:hover { transform:translateY(-3px); box-shadow:0 18px 38px -22px rgba(28,25,23,0.16); }
+    .modecard::before { content:''; position:absolute; top:0; left:0; right:0; height:4px; background:#52CCBA; }
+    .modecard.b::before { background:#52CCBA; }
+    .modecard .label { font-family:'JetBrains Mono',monospace; letter-spacing:.18em; font-size:.7rem;
+      text-transform:uppercase; font-weight:600; color:#52CCBA; }
+    .modecard.b .label { color:#52CCBA; }
+
+    ::-webkit-scrollbar { width:10px; height:10px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:rgba(28,25,23,0.18); border-radius:9999px; border:2px solid #FAF8F4; }
+    ::-webkit-scrollbar-thumb:hover { background:rgba(28,25,23,0.3); }
+    .grad-line { height:1px; background:linear-gradient(90deg,transparent,rgba(28,25,23,0.12),transparent); }
+    .math { font-family:'JetBrains Mono',monospace; font-style:italic; }
+    .tbl-scroll { overflow-x:auto; }
+    @media (max-width: 640px) { .vgrid { gap:10px; } }
+  </style>
+</head>
+<body class="antialiased">
+
+  <!-- ============ NAV ============ -->
+  <nav class="fixed top-0 left-0 w-screen z-50 glass">
+    <div class="w-full px-5 lg:px-8">
+      <div class="relative flex items-center justify-between h-16">
+        <a href="#top" class="wordmark text-lg text-ink-900">GenSight</a>
+        <div class="hidden lg:flex absolute left-1/2 -translate-x-1/2 items-center gap-7 text-sm font-medium text-ink-500">
+          <a href="#tldr" class="nav-link">TL;DR</a>
+          <a href="#method" class="nav-link">Method</a>
+          <a href="#generation" class="nav-link">Generation</a>
+          <a href="#perception" class="nav-link">Perception</a>
+          <div class="nav-dropdown">
+            <a href="#comparisons" class="nav-link nav-link-stack" aria-haspopup="true"><span>Comparisons</span><small>Task OOD</small></a>
+            <div class="nav-dropdown-menu" role="menu" aria-label="Comparison sections">
+              <a href="#comparison-generation" role="menuitem">Generation</a>
+              <a href="#comparison-perception" role="menuitem">Perception</a>
+            </div>
+          </div>
+          <div class="nav-dropdown">
+            <a href="#results" class="nav-link nav-link-stack" aria-haspopup="true"><span>More Results</span><small>Scene, Domain OOD</small></a>
+            <div class="nav-dropdown-menu" role="menu" aria-label="More result sections">
+              <a href="#results-scene" role="menuitem">Scene OOD</a>
+              <a href="#results-domain" role="menuitem">Domain OOD</a>
+            </div>
+          </div>
+          <a href="#bibtex" class="nav-link">BibTeX</a>
+        </div>
+        <a href="https://en.roboscience.co/" target="_blank" rel="noopener noreferrer"><img src="./static/images/roboscience-logo-black-cropped.png" alt="RoboScience" class="h-5 sm:h-6 w-auto" /></a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============ HERO ============ -->
+  <header id="top" class="relative overflow-hidden pt-28 pb-16 lg:pt-36 lg:pb-20">
+    <div class="blob w-[560px] h-[560px] -top-40 -left-40 animate-blob-slow" style="background:radial-gradient(circle at 30% 30%, #52CCBA, transparent 70%);"></div>
+    <div class="absolute inset-0 pointer-events-none" style="background-image:
+      linear-gradient(rgba(28,25,23,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(28,25,23,0.025) 1px, transparent 1px);
+      background-size:56px 56px; mask-image:radial-gradient(ellipse at center, black 25%, transparent 75%); -webkit-mask-image:radial-gradient(ellipse at center, black 25%, transparent 75%);"></div>
+
+    <div class="relative mx-auto max-w-6xl px-5 lg:px-8 text-center">
+      <div class="flex flex-wrap items-center justify-center gap-3 mb-6 reveal">
+        <a href="https://arxiv.org/abs/2610.39232" target="_blank" rel="noopener noreferrer" class="hero-link featured-link" aria-label="arXiv paper">
+          <i class="ai ai-arxiv text-base"></i>
+          <span>arXiv</span>
+          <span class="featured-star" aria-hidden="true">✦</span>
+        </a>
+        <a href="https://github.com/roboscience-ai/gensight" target="_blank" rel="noopener noreferrer" class="hero-link" aria-label="Code repository on GitHub">
+          <i class="fa-solid fa-code text-sm" aria-hidden="true"></i>
+          <span>Code</span>
+          <span class="coming-soon">Coming Soon</span>
+        </a>
+        <a href="#" onclick="return false;" class="hero-link" aria-label="Data link coming soon">
+          <i class="fa-solid fa-database text-sm" aria-hidden="true"></i>
+          <span>Data</span>
+          <span class="coming-soon">Coming Soon</span>
+        </a>
+        <a href="#" onclick="return false;" class="hero-link" aria-label="Playground coming soon">
+          <i class="fa-solid fa-play text-xs"></i>
+          <span>Playground</span>
+          <span class="coming-soon">Coming Soon</span>
+        </a>
+      </div>
+
+      <h1 class="font-display text-6xl sm:text-7xl lg:text-8xl leading-[0.95] mb-6 reveal text-ink-900" style="font-weight:700; letter-spacing:-0.035em;">
+        GenSight
+      </h1>
+
+      <p class="max-w-6xl mx-auto text-2xl sm:text-3xl lg:text-[2.35rem] text-ink-900 mb-10 reveal" style="font-weight:500; letter-spacing:-0.02em; line-height:1.45;">
+        <span class="accent-text" style="font-weight:700;">Seeing</span> and <span class="hero-accent-deep" style="font-weight:700;">Imagining</span> as One: Unified Video <span class="hero-accent-deep" style="font-weight:700;">Generation</span><br class="hidden lg:block" />
+        and <span class="accent-text" style="font-weight:700;">4D Perception</span>
+        for Embodied World Modeling
+      </p>
+
+      <div class="max-w-6xl mx-auto mb-10 reveal" style="color:#65706F;">
+        <div class="text-sm sm:text-base lg:whitespace-nowrap" style="font-weight:600; line-height:1.35; letter-spacing:0.01em;">
+          Haitang Feng<sup>1,2,*</sup>, <a class="author-link" href="https://zhuomanliu.tech/" target="_blank" rel="noopener noreferrer">Zhuoman Liu</a><sup>1,3,*</sup>, <a class="author-link" href="https://scholar.google.com/citations?user=fDUwF94AAAAJ&amp;hl=zh-CN" target="_blank" rel="noopener noreferrer">Zhennan Wang</a><sup>1,†</sup>, <a class="author-link" href="https://chantsss.github.io/" target="_blank" rel="noopener noreferrer">Sheng Wang</a><sup>1,†</sup>, Juelin Li<sup>1</sup>, Chengzhi Zhao<sup>1</sup>, Hexiang Wei<sup>1</sup>, <a class="author-link" href="https://linsats.github.io/" target="_blank" rel="noopener noreferrer">Lin Shao</a><sup>1,4,‡</sup>
+        </div>
+        <div class="text-xs sm:text-sm mt-1" style="line-height:1.35;">
+          <sup>1</sup><a class="affiliation-link" href="https://en.roboscience.co/" target="_blank" rel="noopener noreferrer">RoboScience</a> &nbsp;&nbsp;&nbsp; <sup>2</sup>Nanjing University &nbsp;&nbsp;&nbsp; <sup>3</sup>The Hong Kong Polytechnic University &nbsp;&nbsp;&nbsp; <sup>4</sup>National University of Singapore
+        </div>
+        <div class="text-xs sm:text-sm mt-1" style="line-height:1.35;">
+          <sup>*</sup>Equal contribution &nbsp;&nbsp;&nbsp; <sup>†</sup>Project Leader &nbsp;&nbsp;&nbsp; <sup>‡</sup>Corresponding author
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-center gap-2.5 reveal">
+        <a href="#method" class="btn-ghost px-4 py-2 rounded-full text-sm font-medium text-ink-700 inline-flex items-center gap-2">
+          <i class="fa-solid fa-layer-group text-xs accent-text"></i> One shared DiT, no task heads
+        </a>
+        <a href="#generation" class="btn-ghost px-4 py-2 rounded-full text-sm font-medium text-ink-700 inline-flex items-center gap-2">
+          <i class="fa-solid fa-video text-xs accent-text"></i> Multi-step generation
+        </a>
+        <a href="#perception" class="btn-ghost px-4 py-2 rounded-full text-sm font-medium text-ink-700 inline-flex items-center gap-2">
+          <i class="fa-solid fa-bolt text-xs accent-text"></i> Single-step perception
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ TL;DR ============ -->
+  <section id="tldr" class="relative py-10">
+    <div class="mx-auto max-w-5xl px-5 lg:px-8">
+      <div class="reveal relative rounded-2xl p-8 lg:p-10 glass overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1" style="background:#52CCBA;"></div>
+        <div class="flex items-start gap-6">
+          <div class="hidden sm:flex w-11 h-11 rounded-xl items-center justify-center shrink-0" style="background:rgba(82,204,186,.1);">
+            <i class="fa-solid fa-lightbulb accent-text"></i>
+          </div>
+          <div>
+            <div class="font-mono text-[12px] uppercase tracking-[0.2em] text-ink-500 mb-3">TL;DR</div>
+            <p class="text-lg lg:text-xl leading-[1.65] text-ink-700">
+              An embodied world model should not only <em>imagine</em> plausible futures but also <em>perceive</em>
+              the geometry, semantics, and motion of the evolving world. <strong class="text-ink-900">GenSight</strong>
+              folds both into one pretrained video diffusion transformer — video, depth, embodiment segmentation, and
+              first-frame-relative 2D flow share <strong class="text-ink-900">a single latent representation</strong>, <strong class="text-ink-900">a single backbone</strong>, and <strong class="text-ink-900">a single prediction space</strong>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TEASER ============ -->
+  <section class="relative py-10">
+    <div class="mx-auto max-w-7xl px-5 lg:px-8">
+      <div class="reveal gradient-border p-3 lg:p-4">
+        <img src="./static/images/teaser.jpg" alt="GenSight teaser: one model generates future video with aligned segmentation, depth and flow, and perceives the same modalities from observed video; the bottom panel lifts them into 4D scene understanding and robot trajectories." class="w-full rounded-2xl" />
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ METHOD ============ -->
+  <section id="method" class="relative py-20 lg:py-24">
+    <div class="relative mx-auto max-w-7xl px-5 lg:px-8">
+      <div class="text-center mb-14 reveal">
+        <div class="font-mono text-[13px] uppercase tracking-[0.22em] text-ink-500 mb-4">Method</div>
+        <h2 class="font-display text-4xl lg:text-[3.75rem]" style="font-weight:600; letter-spacing:-0.035em; line-height:1.02;">
+          Unification at <span class="accent-text">four levels</span>.
+        </h2>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+        <div class="reveal stat-card rounded-2xl p-7 lift">
+          <div class="font-mono text-[11px] uppercase tracking-[.18em] accent-text mb-3">01 · Representation</div>
+          <h3 class="font-display text-xl mb-3" style="font-weight:600;">Everything as RGB</h3>
+          <p class="text-ink-500 leading-relaxed text-[.95rem]">
+            Each dense modality is mapped to a three-channel image-like sequence and encoded by the
+            <strong class="text-ink-700">same frozen video autoencoder</strong> used for RGB. Modality-specific
+            work is confined to a deterministic encode/decode interface — no learnable per-modality modules.
+          </p>
+        </div>
+        <div class="reveal stat-card rounded-2xl p-7 lift">
+          <div class="font-mono text-[11px] uppercase tracking-[.18em] accent-text mb-3">02 · Architecture</div>
+          <h3 class="font-display text-xl mb-3" style="font-weight:600;">One shared Video DiT</h3>
+          <p class="text-ink-500 leading-relaxed text-[.95rem]">
+            The first <span class="math">k</span> blocks compute task-agnostic features once; the rest share all
+            Transformer weights and gain task dependence only through
+            <strong class="text-ink-700">task-adaptive RMSNorm</strong>.
+          </p>
+        </div>
+        <div class="reveal stat-card rounded-2xl p-7 lift">
+          <div class="font-mono text-[11px] uppercase tracking-[.18em] accent-text mb-3">03 · Prediction space</div>
+          <h3 class="font-display text-xl mb-3" style="font-weight:600;">Unified target space</h3>
+          <p class="text-ink-500 leading-relaxed text-[.95rem]">
+            Generation and perception are both trained as velocity regression on a shared noise sample. The noise
+            cancels in the difference, leaving a clean
+            <strong class="text-ink-700">cross-modal residual</strong> <span class="math">z<sub>V</sub> − z<sub>m</sub></span>
+            — dense outputs need no denoising trajectory of their own.
+          </p>
+        </div>
+        <div class="reveal stat-card rounded-2xl p-7 lift">
+          <div class="font-mono text-[11px] uppercase tracking-[.18em] accent-text mb-3">04 · Inference</div>
+          <h3 class="font-display text-xl mb-3" style="font-weight:600;">Two regimes, one readout</h3>
+          <p class="text-ink-500 leading-relaxed text-[.95rem]">
+            One model, two modes: <strong class="text-ink-700">multi-step generation</strong> that reads dense
+            outputs along the denoising path, and <strong class="text-ink-700">single-step perception</strong> from an
+            observed video. Both share one readout and decoder — no per-modality denoising.
+          </p>
+        </div>
+      </div>
+
+      <div class="reveal">
+        <div class="text-center mb-5">
+          <h3 class="font-display text-2xl" style="font-weight:600;">Overview</h3>
+          <p class="text-ink-400 text-sm mt-1.5">Shared trunk, task-modulated blocks, one frozen autoencoder — and the two inference regimes it supports.</p>
+        </div>
+        <div class="gradient-border p-4 lg:p-7">
+          <img src="./static/images/pipeline.jpg" loading="lazy" decoding="async" alt="GenSight pipeline: a shared Video DiT predicts velocities for video, segmentation, depth and flow in a unified velocity space; below, generation mode reads dense outputs along the denoising trajectory while perception mode predicts them in a single step." class="w-full rounded-xl" />
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6 mt-14">
+        <div class="reveal modecard">
+          <div class="label mb-3">Generation mode</div>
+          <h3 class="font-display text-2xl mb-3 text-ink-900" style="font-weight:600;">Imagine the future</h3>
+          <p class="text-ink-500 leading-relaxed">
+            From an initial frame and a text prompt, the model runs <span class="math">K</span> denoising steps to
+            synthesize future RGB. When the trajectory reaches a modality's readout level
+            <span class="math">σ*<sub>m</sub></span>, that dense stream fires once and its latent is reconstructed
+            relative to the model's own video estimate.
+          </p>
+        </div>
+        <div class="reveal modecard b">
+          <div class="label mb-3">Perception mode</div>
+          <h3 class="font-display text-2xl mb-3 text-ink-900" style="font-weight:600;">Perceive what happened</h3>
+          <p class="text-ink-500 leading-relaxed">
+            Given an observed video, the noisy state is built directly at <span class="math">σ*<sub>m</sub></span>.
+            A <strong class="text-ink-700">single forward pass</strong> yields the dense prediction — same readout,
+            same decoder, no iterative denoising.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grad-line max-w-5xl mx-auto"></div>
+
+  <!-- ============ GENERATION ============ -->
+  <section id="generation" class="relative py-20 lg:py-24">
+    <div class="relative mx-auto max-w-7xl px-5 lg:px-8">
+      <div class="text-center mb-10 reveal">
+        <div class="font-mono text-[13px] uppercase tracking-[0.22em] text-ink-500 mb-4">Generation Mode</div>
+        <h2 class="font-display text-4xl lg:text-[3.75rem] mb-4" style="font-weight:600; letter-spacing:-0.035em; line-height:1.02;">
+          One rollout, <span class="accent-text">four modalities</span>.
+        </h2>
+        <p class="text-ink-500 max-w-2xl mx-auto leading-relaxed">
+          Given only an initial frame and a text prompt, GenSight generates the future video together with
+          aligned depth, embodiment mask, and first-frame-relative 2D flow — all read out of the same denoising pass.
+        </p>
+      </div>
+
+      <div class="flex justify-center mb-4 reveal">
+        <div class="inline-flex flex-wrap justify-center glass rounded-3xl p-1.5 gap-1.5" data-tabs="gen"></div>
+      </div>
+      <div class="text-center mb-7 reveal">
+        <p class="text-sm text-ink-400"><span class="font-mono text-[11px] uppercase tracking-wider">Input prompt</span>
+          &nbsp;<span data-task="gen" class="text-ink-700"></span></p>
+      </div>
+
+      <div class="reveal">
+        <div class="vgrid" data-grid="gen"></div>
+      </div>
+      <div class="flex justify-center mt-7 reveal">
+        <button class="btn-ghost px-5 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2" data-replay="gen">
+          <i class="fa-solid fa-rotate-right text-xs"></i> Replay in sync
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <div class="grad-line max-w-5xl mx-auto"></div>
+
+  <!-- ============ PERCEPTION ============ -->
+  <section id="perception" class="relative py-20 lg:py-24">
+    <div class="relative mx-auto max-w-7xl px-5 lg:px-8">
+      <div class="text-center mb-10 reveal">
+        <div class="font-mono text-[13px] uppercase tracking-[0.22em] text-ink-500 mb-4">Perception Mode</div>
+        <h2 class="font-display text-4xl lg:text-[3.75rem] mb-4" style="font-weight:600; letter-spacing:-0.035em; line-height:1.02;">
+          One step from <span class="accent-text">an observed video</span>.
+        </h2>
+        <p class="text-ink-500 max-w-2xl mx-auto leading-relaxed">
+          The same weights, now fed real video. Each dense modality is recovered in a single forward pass
+          from a noisy state built directly at that modality's readout level — no iterative denoising.
+        </p>
+      </div>
+
+      <div class="flex justify-center mb-4 reveal">
+        <div class="inline-flex flex-wrap justify-center glass rounded-3xl p-1.5 gap-1.5" data-tabs="perc"></div>
+      </div>
+      <div class="text-center mb-7 reveal">
+        <p class="text-sm text-ink-400"><span class="font-mono text-[11px] uppercase tracking-wider">Episode</span>
+          &nbsp;<span data-task="perc" class="text-ink-700"></span></p>
+      </div>
+
+      <div class="reveal mb-9 flex justify-center">
+        <div class="w-full max-w-lg">
+          <div class="rowlabel text-center">Observed video — the only input</div>
+          <div class="vgrid" data-grid="perc-input"></div>
+        </div>
+      </div>
+
+      <div class="reveal">
+        <div class="rowlabel">Ground truth</div>
+        <div class="vgrid mb-6" data-grid="perc-gt"></div>
+        <div class="rowlabel">GenSight — single-step prediction</div>
+        <div class="vgrid" data-grid="perc-ours"></div>
+      </div>
+      <div class="flex justify-center mt-7 reveal">
+        <button class="btn-ghost px-5 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2" data-replay="perc">
+          <i class="fa-solid fa-rotate-right text-xs"></i> Replay in sync
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <div class="grad-line max-w-5xl mx-auto"></div>
+
+  <!-- ============ COMPARISONS ============ -->
+  <section id="comparisons" class="relative py-20 lg:py-24">
+    <div class="relative mx-auto max-w-7xl px-5 lg:px-8">
+      <div class="text-center mb-12 reveal">
+        <div class="font-mono text-[13px] uppercase tracking-[0.22em] text-ink-500 mb-4">Qualitative Comparisons</div>
+        <h2 class="font-display text-4xl lg:text-[3.75rem] mb-4" style="font-weight:600; letter-spacing:-0.035em; line-height:1.02;">
+          Against <span class="accent-text">task-specific</span> models.
+        </h2>
+        <p class="text-ink-500 max-w-2xl mx-auto leading-relaxed">
+          A single unified model, compared side by side with specialist depth, flow, and segmentation
+          estimators — and with dedicated video generators.
+        </p>
+      </div>
+
+      <!-- Generation baselines -->
+      <div class="comparisons-flow">
+      <div id="comparison-generation" class="comparison-generation mb-16">
+        <div class="mb-5 reveal">
+          <h3 class="font-display font-semibold text-[1.45rem]" style="letter-spacing:-0.025em;">
+            Generation
+          </h3>
+          <p class="text-ink-400 text-sm mt-1">All generators receive the same initial frame and input prompt.</p>
+        </div>
+        <div class="flex justify-center mb-7 reveal">
+          <div class="inline-flex glass rounded-full p-1.5 gap-1.5" data-tabs="gcmp"></div>
+        </div>
+        <div class="text-center mb-7 reveal">
+          <p class="text-sm text-ink-400"><span class="font-mono text-[11px] uppercase tracking-wider">Input prompt</span>
+            &nbsp;<span class="text-ink-700">Turn and place switch with both arms</span></p>
+        </div>
+        <div class="reveal">
+          <div data-gcmp-video hidden>
+            <div class="rowlabel">Generated RGB video</div>
+            <div class="vgrid mb-6" data-grid="gcmp-video"></div>
+            <div class="rowlabel" data-gcmp-modlabel></div>
+          </div>
+          <div class="vgrid" data-grid="gcmp"></div>
+        </div>
+      </div>
+
+      <!-- Generation quantitative results -->
+      <div class="comparison-generation-quant reveal mb-20">
+        <div class="mb-4"><h3 class="font-display font-semibold text-xl">Generation <span class="text-ink-400 font-normal">— quantitative</span></h3>
+          <p class="text-ink-400 text-sm mt-1">Video, depth and 2D-flow metrics on the RoboMIND task-OOD set (lower is better unless marked ↑).</p></div>
+        <div class="stat-card rounded-2xl p-2 lg:p-4 tbl-scroll"><table class="ftable">
+          <thead><tr><th rowspan="2" class="text-left" style="text-align:left;">Method</th><th colspan="4" class="grp">Video</th><th colspan="2" class="grp">Depth</th><th colspan="3" class="grp">2D Flow</th></tr>
+          <tr><th>FVD ↓</th><th>FID ↓</th><th>PSNR ↑</th><th>LPIPS ↓</th><th>AbsRel ↓</th><th>δ<sub>1</sub> ↑</th><th>nEPE ↓</th><th>AAE<sub>top1%</sub> ↓</th><th>EPE ↓</th></tr></thead>
+          <tbody>
+          <tr class="sep"><td colspan="10">RoboMIND 2.0</td></tr>
+          <tr><td class="name">Wan2.2-I2V-A14B</td><td class="num-cell">69.37</td><td class="num-cell">50.01</td><td class="num-cell">17.13</td><td class="num-cell">0.3083</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td></tr>
+          <tr><td class="name">RynnWorld4D</td><td class="num-cell">73.45</td><td class="num-cell">47.90</td><td class="num-cell best">18.07</td><td class="num-cell second">0.2661</td><td class="num-cell second">8.53</td><td class="num-cell second">92.55</td><td class="num-cell second">1.133</td><td class="num-cell second">45.14</td><td class="num-cell best">4.936</td></tr>
+          <tr><td class="name">Cosmos3-Nano</td><td class="num-cell second">44.97</td><td class="num-cell second">42.09</td><td class="num-cell">16.90</td><td class="num-cell">0.3002</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td></tr>
+          <tr class="highlight"><td class="name">GenSight</td><td class="num-cell best">14.55</td><td class="num-cell best">16.12</td><td class="num-cell second">18.01</td><td class="num-cell best">0.2296</td><td class="num-cell best">7.88</td><td class="num-cell best">93.17</td><td class="num-cell best">0.427</td><td class="num-cell best">23.10</td><td class="num-cell second">7.089</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+
+      <!-- Perception qualitative results -->
+      <div id="comparison-perception" class="comparison-perception mb-16">
+        <div class="mb-5 reveal"><h3 class="font-display font-semibold text-[1.45rem]">Perception</h3><p class="text-ink-400 text-sm mt-1">All methods receive the same observed RGB video.</p></div>
+        <div class="flex justify-center mb-7 reveal"><div class="inline-flex glass rounded-full p-1.5 gap-1.5" data-tabs="pcmp"></div></div>
+        <div class="reveal mb-8 flex justify-center" data-pcmp-input-panel><div class="w-full max-w-lg"><div class="rowlabel text-center">Observed video — input to every method</div><div class="vgrid" data-grid="pcmp-input"></div></div></div>
+        <div class="reveal"><div class="vgrid" data-grid="pcmp"></div></div>
+        <!-- The 3D-flow gallery is moved here by renderPcmp when its tab is selected. -->
+      </div>
+
+      <!-- 3D scene-flow tracking -->
+      <div class="comparison-scene-flow mt-12" data-pcmp-track hidden>
+        <div class="mb-6 reveal">
+          <h3 class="font-display font-semibold text-[1.45rem]" style="letter-spacing:-0.025em;">
+            3D scene flow <span class="text-ink-400 font-normal">— Franka, turn and place switch with both arms</span>
+          </h3>
+          <p class="text-ink-400 text-sm mt-1">
+            Recovered by lifting predicted depth with first-frame-relative 2D flow — not produced by a separate output head.
+          </p>
+        </div>
+
+        <!-- Colour scale, redrawn in CSS so the numbers stay legible at any size -->
+        <div class="reveal mb-9 stat-card rounded-2xl px-6 py-5">
+          <div class="text-sm text-ink-700" style="font-weight:500;">
+            Track colour = absolute error <span class="math">|pred − GT|</span>
+          </div>
+          <div class="mt-3 rounded-md overflow-hidden" style="height:14px; background:linear-gradient(90deg,#30123b,#4145ab,#4675ed,#39a2fc,#1bcfd4,#24eca6,#61fc6c,#a4fc3b,#d1e834,#f3c63a,#fe9b2d,#f36315,#d93806,#a11a01,#7a0403);"></div>
+          <div class="relative h-5 mt-1.5 text-[11px] font-mono text-ink-400">
+            <span class="absolute left-0">0</span>
+            <span class="absolute" style="left:14.8%; transform:translateX(-50%);">5</span>
+            <span class="absolute" style="left:29.7%; transform:translateX(-50%);">10</span>
+            <span class="absolute" style="left:44.5%; transform:translateX(-50%);">15</span>
+            <span class="absolute" style="left:59.3%; transform:translateX(-50%);">20</span>
+            <span class="absolute" style="left:74.2%; transform:translateX(-50%);">25</span>
+            <span class="absolute" style="left:89.0%; transform:translateX(-50%);">30</span>
+            <span class="absolute right-0">33.7 cm</span>
+          </div>
+          <p class="text-xs text-ink-400 mt-2.5 leading-relaxed">
+            One scale shared by every panel and fixed for the whole clip. Zero means the predicted track sits exactly
+            on the ground-truth point; errors are clamped at 33.7 cm and above.
+          </p>
+        </div>
+
+        <div class="reveal mb-8">
+          <div class="rowlabel">Scene and reference</div>
+          <div class="vgrid" data-grid="track-context"></div>
+        </div>
+
+        <div class="reveal">
+          <div class="rowlabel">Each method, head-on and rotated 45°</div>
+          <div class="vgrid" data-grid="track-methods"></div>
+        </div>
+
+        <div class="flex justify-center mt-7 reveal">
+          <button class="btn-ghost px-5 py-2.5 rounded-full text-sm font-medium inline-flex items-center gap-2" data-replay="track">
+            <i class="fa-solid fa-rotate-right text-xs"></i> Replay in sync
+          </button>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-x-10 gap-y-3 mt-9 reveal">
+          <p class="text-sm text-ink-500 leading-relaxed">
+            <strong class="text-ink-700">Reading the panels.</strong> Each card holds one method seen twice — head-on
+            and rotated 45°. Head-on, most of the tracks look plausible; the colour is what gives them away, since it
+            encodes distance from the ground-truth point rather than anything about the shape.
+          </p>
+          <p class="text-sm text-ink-500 leading-relaxed">
+            <strong class="text-ink-700">Why the rotated view matters.</strong> Rotating the camera exposes the depth
+            error a method carries. Track4World is the clearest case — convincing head-on, visibly offset in depth from
+            the side. Accurate Z-axis depth is what puts GenSight ahead on <em>absolute</em> ADE/FDE, while residual
+            frame-to-frame depth jitter is what costs it a little on the displacement variants.
+          </p>
+        </div>
+      </div>
+
+      <!-- Perception quantitative results -->
+      <div class="comparison-perception-quant reveal mt-20">
+        <div class="mb-4"><h3 class="font-display font-semibold text-xl">Perception <span class="text-ink-400 font-normal">— quantitative</span></h3><p class="text-ink-400 text-sm mt-1">Metrics on RoboMIND with ground-truth RGB input.</p></div>
+        <div class="grid lg:grid-cols-2 gap-6 mb-6"><div class="stat-card rounded-2xl p-2 lg:p-4"><div class="px-3 pt-2 pb-1 font-mono text-[11px] uppercase tracking-[.16em] text-ink-400">Embodiment segmentation · IoU ↑</div><table class="ftable"><tbody><tr><td class="name">SAM 3</td><td class="num-cell second">73.5</td></tr><tr><td class="name">GenCeption</td><td class="num-cell">67.5</td></tr><tr class="highlight"><td class="name">GenSight</td><td class="num-cell best">88.7</td></tr></tbody></table></div>
+          <div class="stat-card rounded-2xl p-2 lg:p-4 tbl-scroll"><div class="px-3 pt-2 pb-1 font-mono text-[11px] uppercase tracking-[.16em] text-ink-400">Depth</div><table class="ftable"><thead><tr><th class="text-left" style="text-align:left;">Method</th><th>RMSE ↓</th><th>AbsRel ↓</th><th>δ<sub>1</sub> ↑</th></tr></thead><tbody><tr><td class="name">VDA</td><td class="num-cell">13.12</td><td class="num-cell">7.4</td><td class="num-cell">94.0</td></tr><tr><td class="name">DA3<sub>mono</sub></td><td class="num-cell">15.65</td><td class="num-cell">13.2</td><td class="num-cell">81.7</td></tr><tr><td class="name">DA3<sub>stream</sub></td><td class="num-cell">16.17</td><td class="num-cell">13.2</td><td class="num-cell">85.3</td></tr><tr><td class="name">DVD</td><td class="num-cell">15.91</td><td class="num-cell">7.6</td><td class="num-cell">92.9</td></tr><tr><td class="name">VGGT-Ω</td><td class="num-cell second">13.11</td><td class="num-cell second">5.9</td><td class="num-cell second">94.5</td></tr><tr><td class="name">GenCeption</td><td class="num-cell">15.89</td><td class="num-cell">8.5</td><td class="num-cell">90.7</td></tr><tr class="highlight"><td class="name">GenSight</td><td class="num-cell best">4.76</td><td class="num-cell best">2.4</td><td class="num-cell best">99.1</td></tr></tbody></table></div></div>
+        <div class="stat-card rounded-2xl p-2 lg:p-4 tbl-scroll"><div class="px-3 pt-2 pb-1 font-mono text-[11px] uppercase tracking-[.16em] text-ink-400">Flow · trajectory error</div><table class="ftable"><thead><tr><th class="text-left" style="text-align:left;">Method</th><th>EPE ↓</th><th>ADE<sub>abs</sub> / <sub>disp</sub> ↓</th><th>FDE<sub>abs</sub> / <sub>disp</sub> ↓</th></tr></thead><tbody><tr><td class="name">RAFT (GT depth)</td><td class="num-cell">11.2</td><td class="num-cell"><span class="best">7.04</span> / 6.88</td><td class="num-cell"><span class="best">7.49</span> / <span class="second">7.40</span></td></tr><tr><td class="name">RAFT (pred. depth)</td><td class="num-cell">9.63</td><td class="num-cell">9.63 / 7.68</td><td class="num-cell">9.95 / 7.92</td></tr><tr><td class="name">Any4D</td><td class="num-cell">18.4</td><td class="num-cell">15.26 / <span class="second">6.72</span></td><td class="num-cell">16.93 / 7.97</td></tr><tr><td class="name">V-DPM</td><td class="num-cell">25.2</td><td class="num-cell">24.17 / <span class="best">4.88</span></td><td class="num-cell">26.24 / <span class="best">7.14</span></td></tr><tr><td class="name">Track4World</td><td class="num-cell second">6.8</td><td class="num-cell">20.31 / 6.92</td><td class="num-cell">23.99 / 9.06</td></tr><tr class="highlight"><td class="name">GenSight</td><td class="num-cell best">5.2</td><td class="num-cell"><span class="second">7.39</span> / 7.68</td><td class="num-cell"><span class="second">9.51</span> / 9.87</td></tr></tbody></table></div>
+      </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grad-line max-w-5xl mx-auto"></div>
+
+  <!-- ============ MORE OOD RESULTS ============ -->
+  <section id="results" class="relative py-20 lg:py-24">
+    <div class="relative mx-auto max-w-7xl px-5 lg:px-8">
+      <div class="text-center mb-10 reveal">
+        <div class="font-mono text-[13px] uppercase tracking-[0.22em] text-ink-500 mb-4">More Results</div>
+        <h2 class="font-display text-4xl lg:text-[3.75rem]" style="font-weight:600; letter-spacing:-0.035em; line-height:1.02;">
+          Beyond the <span class="accent-text">benchmark</span>.
+        </h2>
+        <p class="text-ink-500 max-w-2xl mx-auto mt-5 leading-relaxed">Qualitative rollouts and unified readouts on held-out manipulation episodes from new domains and scenes.</p>
+      </div>
+      <div class="reveal mb-10 flex justify-center">
+        <a href="#" onclick="return false;" class="hero-link" aria-label="Playground coming soon">
+          <i class="fa-solid fa-play text-xs"></i>
+          <span>Try our model here · Playground</span>
+          <span class="coming-soon">Coming Soon</span>
+        </a>
+      </div>
+      <div class="flex justify-center mb-8 reveal"><div class="inline-flex glass rounded-3xl p-1.5 gap-1.5" data-tabs="ood-kind"></div></div>
+      <div id="results-scene" data-ood-panel="scene" hidden>
+        <div class="mb-5 reveal"><h3 class="font-display font-semibold text-[1.45rem]">Scene OOD</h3></div>
+        <div class="flex justify-center mb-4 reveal"><div class="inline-flex flex-wrap justify-center glass rounded-3xl p-1.5 gap-1.5" data-tabs="ood"></div></div>
+        <p class="text-center text-ink-400 text-sm mb-8 reveal">Input prompt: <span data-ood-caption>Pick up the tissue box and put it on the laptop.</span></p>
+        <div class="reveal mb-8"><div class="rowlabel">Generation</div><div class="vgrid" data-grid="ood-gen"></div></div>
+        <div class="reveal" data-ood-perc><div class="rowlabel">Perception</div><div class="vgrid" data-grid="ood-perc"></div></div>
+        <p class="text-xs text-ink-400 max-w-3xl mx-auto mt-6 text-center leading-relaxed reveal">Generated RGB, depth, flow and embodiment segmentation share one model; 2D tracking is shown where available.</p>
+      </div>
+      <div id="results-domain" data-ood-panel="domain" hidden>
+        <div class="mb-5 reveal"><h3 class="font-display font-semibold text-[1.45rem]">Domain OOD <span class="text-ink-400 font-normal">— RoboTwin 2.0 simulation transfer</span></h3><p class="text-ink-400 text-sm mt-1">RoboTwin results moved here from the task-comparison tables.</p></div>
+        <div class="reveal mb-8"><div class="rowlabel">Generation · GenSight / Ours</div><div class="vgrid" data-grid="domain-gen"></div></div>
+        <div class="reveal"><div class="rowlabel">Perception · GenSight / Ours</div><div class="vgrid" data-grid="domain-perc"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BIBTEX ============ -->
+  <section id="bibtex" class="relative py-16 lg:py-20">
+    <div class="mx-auto max-w-5xl px-5 lg:px-8">
+      <div class="text-center mb-8 reveal">
+        <div class="font-mono text-[12px] uppercase tracking-[0.2em] text-ink-400 mb-3">Citation</div>
+        <h2 class="font-display text-4xl lg:text-[3.75rem]" style="font-weight:600; letter-spacing:-0.035em; line-height:1.02;">
+          BibTeX
+        </h2>
+      </div>
+      <div class="reveal gradient-border overflow-hidden">
+        <pre class="overflow-x-auto p-6 lg:p-8 text-sm leading-relaxed text-ink-700"><code>@misc{feng2026seeingimaginingoneunified,
+      title={Seeing and Imagining as One: Unified Video Generation and 4D Perception for Embodied World Modeling},
+      author={Haitang Feng and Zhuoman Liu and Zhennan Wang and Sheng Wang and Juelin Li and Chengzhi Zhao and Hexiang Wei and Lin Shao},
+      year={2026},
+      eprint={2610.39232},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2610.39232},
+}</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="relative py-14 border-t border-ink-100">
+    <div class="mx-auto max-w-7xl px-5 lg:px-8 text-center">
+      <div class="wordmark text-lg text-ink-900 mb-2">GenSight</div>
+      <p class="text-sm text-ink-400 max-w-xl mx-auto leading-relaxed">
+        Seeing and Imagining as One: Unified Video Generation and 4D Perception for Embodied World Modeling.
+      </p>
+    </div>
+  </footer>
+
+<script>
+  // ============================================================
+  // Data
+  // ============================================================
+  const V = './static/videos/';
+
+  const SCENES = [
+    { id:'ur5',      dir:'ur5',      name:'UR5',          sub:'RoboMIND 2.0', task:'Place bread on blue plate with arms' },
+    { id:'franka',   dir:'franka',   name:'Franka',       sub:'RoboMIND 2.0', task:'Turn and place switch with both arms' },
+    { id:'tianyi',   dir:'tianyi',   name:'Tianyi',       sub:'RoboMIND 2.0', task:'Place white toy into blue box with left hand' },
+    { id:'tienkung', dir:'tienkung', name:'Tienkung',     sub:'RoboMIND 2.0', task:'Close notebook with right arm' },
+    { id:'egotable', dir:'demo5',    name:'EgoTable',     sub:'Human hand',   task:'Egocentric tabletop manipulation with a human hand' },
+  ];
+
+  const TRACK_SCENES = {
+    generation: new Set(['ur5', 'franka', 'tianyi', 'tienkung', 'demo5', 'robotwin']),
+    perception: new Set(['franka', 'tianyi', 'tienkung', 'demo5', 'robotwin']),
+  };
+
+  // Domain OOD is shown only in the dedicated More Results panel, not in the
+  // Generation and Perception scene selectors above.
+  const DOMAIN_OOD_SCENE = { dir:'robotwin' };
+
+  const MODS = [
+    { k:'video', label:'RGB Video',       tag:'Appearance' },
+    { k:'depth', label:'Depth',           tag:'Geometry'   },
+    { k:'seg',   label:'Embodiment Mask', tag:'Semantics'  },
+    { k:'flow',  label:'2D Flow',         tag:'Motion'     },
+  ];
+  // Tienkung ships a per-limb mask file; it is presented like every other embodiment mask.
+  const MASK_OVERRIDE = {
+    tienkung: { k:'seg_rightarm', label:'Embodiment Mask', tag:'Semantics' },
+  };
+
+  function modsFor(sceneId) {
+    const ov = MASK_OVERRIDE[sceneId];
+    if (!ov) return MODS;
+    return MODS.map((m) => (m.k === 'seg' ? ov : m));
+  }
+
+  // Perception comparison on UR5 — ground truth first, ours immediately next to it.
+  const PCMP = {
+    depth: { label:'Depth', dir:'perception/ur5/depth/', items:[
+      ['gt.mp4','Ground Truth','gt'], ['ours.mp4','GenSight','ours'],
+      ['vggt_omega.mp4','VGGT-Ω'], ['vda.mp4','VDA'], ['dvd.mp4','DVD'],
+      ['da3.mp4','DA3 (mono)'], ['da3stream.mp4','DA3 (stream)'],
+      ['genception.mp4','GenCeption'], ['genception_14b.mp4','GenCeption-14B'],
+    ]},
+    flow: { label:'2D Flow', dir:'perception/ur5/flow/', items:[
+      ['gt.mp4','Ground Truth','gt'], ['ours.mp4','GenSight','ours'],
+      ['alltracker.mp4','AllTracker'], ['t4w.mp4','Track4World'],
+      ['raft_frame0.mp4','RAFT (frame-0)'], ['raft_consec.mp4','RAFT (consecutive)'],
+      ['raft_frame0_warm.mp4','RAFT (frame-0, warm)'], ['any4d.mp4','Any4D'], ['vdpm.mp4','V-DPM'],
+    ]},
+    seg: { label:'Segmentation', dir:'perception/ur5/seg/', items:[
+      ['gt.mp4','Ground Truth','gt'], ['ours.mp4','GenSight','ours'],
+      ['sam3.mp4','SAM 3'], ['genception.mp4','GenCeption'],
+    ]},
+    track: { label:'3D Flow', track:true },
+  };
+  const PCMP_INPUT = 'perception/ur5/video.mp4';
+
+  // Generation comparison on Franka. Dense tabs also show each method's generated RGB
+  // directly above, so appearance and structure can be read off the same column.
+  const GCMP_DIR = 'generation/franka/';
+  const GCMP = {
+    video: { label:'RGB Video', mod:'video', withVideo:false, methods:[
+      ['gt','Ground Truth','gt'], ['ours','GenSight','ours'],
+      ['rynn','RynnWorld4D'], ['cosmos','Cosmos3-Nano'], ['wan22_i2v','Wan2.2-I2V-A14B'],
+    ]},
+    depth: { label:'Depth', mod:'depth', withVideo:true, methods:[
+      ['gt','Ground Truth','gt'], ['ours','GenSight','ours'], ['rynn','RynnWorld4D'],
+    ]},
+    flow: { label:'2D Flow', mod:'flow', withVideo:true, methods:[
+      ['gt','Ground Truth','gt'], ['ours','GenSight','ours'], ['rynn','RynnWorld4D'],
+    ]},
+    seg: { label:'Segmentation', mod:'seg', withVideo:true, methods:[
+      ['gt','Ground Truth','gt'], ['ours','GenSight','ours'],
+    ]},
+  };
+
+  const OOD_CLIPS = [
+    { name:'Tissue on laptop', stem:'01-tissue_on_laptop', track:true, caption:'Pick up the tissue box and put it on the laptop.' },
+    { name:'Close laptop', stem:'02-close_laptop', track:true, caption:'Close the laptop lid.' },
+    { name:'Bottle on notebook', stem:'03-bottle_on_notebook', track:true, caption:'Pick up the bottle and put it on the notebook.' },
+    { name:'Apple on green jar', stem:'04-apple_on_green', track:true, caption:'Pick up the apple and put it on the green jar.' },
+    { name:'Pen on notebook', stem:'05-pen_on_notebook', track:true, caption:'Pick up the pen and put it on the notebook.' },
+    { name:'Bed', dir:'bed', track:true, perc:true, caption:'Put the pillow in the center of the bed head.' },
+    { name:'Coffee table', dir:'coffetable', track:true, perc:true, caption:'Put the tissue in the center of the coffee table.' },
+  ];
+
+  // 3D scene-flow tracking on Franka. The source clip is a 3x6 mosaic; it was split into
+  // per-panel files so each one can carry a real HTML label instead of a baked-in caption.
+  const TRACK_DIR = 'tracking_3d/';
+  const TRACK_CONTEXT = [
+    ['context/source.mp4',   'Source RGB',   'Input',         null],
+    ['context/gt_view0.mp4', 'Ground truth', 'Original view', 'gt'],
+    ['context/gt_view1.mp4', 'Ground truth', 'Rotated 45°',   'gt'],
+  ];
+  const TRACK_METHODS = [
+    ['ours',      'GenSight',            'ours'],
+    ['any4d',     'Any4D',               null],
+    ['t4w',       'Track4World',         null],
+    ['vdpm',      'V-DPM',               null],
+    ['raft_ourd', 'RAFT-3D (our depth)', null],
+    ['raft_gtd',  'RAFT-3D (GT depth)',  null],
+  ];
+
+  // ============================================================
+  // Lazy video plumbing — only what is on screen ever decodes.
+  // ============================================================
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      const v = e.target;
+      if (e.isIntersecting) {
+        if (!v.src && v.dataset.src) { v.src = v.dataset.src; }
+        const p = v.play(); if (p) p.catch(() => {});
+      } else if (document.fullscreenElement !== v && !v.webkitDisplayingFullscreen) {
+        v.pause();
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '150px 0px' });
+
+  const BADGE = { ours:'Ours', gt:'Ground Truth', generated:'Generated' };
+  let activeVideoFullscreen = null;
+
+  function closeVideoFullscreen() {
+    if (!activeVideoFullscreen) return;
+    const { overlay, wrap, parent, nextSibling, previousOverflow } = activeVideoFullscreen;
+    if (nextSibling && nextSibling.parentNode === parent) parent.insertBefore(wrap, nextSibling);
+    else parent.appendChild(wrap);
+    overlay.remove();
+    document.body.style.overflow = previousOverflow;
+    activeVideoFullscreen = null;
+  }
+
+  function openVideoFullscreen(wrap, video, label) {
+    closeVideoFullscreen();
+    const parent = wrap.parentNode;
+    const nextSibling = wrap.nextSibling;
+    const overlay = document.createElement('div');
+    overlay.className = 'video-fullscreen-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', `${label} full screen`);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'video-fullscreen-close';
+    close.setAttribute('aria-label', 'Close full screen');
+    close.title = 'Close full screen';
+    close.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+    close.addEventListener('click', closeVideoFullscreen);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeVideoFullscreen();
+    });
+    overlay.appendChild(close);
+    overlay.appendChild(wrap);
+    document.body.appendChild(overlay);
+    activeVideoFullscreen = { overlay, wrap, parent, nextSibling, previousOverflow: document.body.style.overflow };
+    document.body.style.overflow = 'hidden';
+    const p = video.play(); if (p) p.catch(() => {});
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeVideoFullscreen();
+  });
+
+  function addFullscreenButton(wrap, video, label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'vfullscreen';
+    button.setAttribute('aria-label', `View ${label} full screen`);
+    button.title = 'View full screen';
+    button.innerHTML = '<i class="fa-solid fa-expand" aria-hidden="true"></i>';
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openVideoFullscreen(wrap, video, label);
+    });
+    wrap.appendChild(button);
+  }
+
+  function cell(src, label, tag, kind) {
+    const fig = document.createElement('figure');
+    fig.className = 'vcell';
+    const wrap = document.createElement('div');
+    const accent = kind === 'ours' || kind === 'generated';
+    wrap.className = 'vwrap' + (accent ? ' is-ours' : kind === 'gt' ? ' is-ref' : '');
+    if (BADGE[kind]) {
+      const b = document.createElement('span');
+      b.className = 'vbadge' + (kind === 'gt' ? ' ref' : '');
+      b.textContent = BADGE[kind];
+      wrap.appendChild(b);
+    }
+    const v = document.createElement('video');
+    v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'none';
+    v.setAttribute('muted',''); v.setAttribute('playsinline','');
+    v.dataset.src = src;
+    v.setAttribute('aria-label', label);
+    wrap.appendChild(v);
+    addFullscreenButton(wrap, v, label);
+    fig.appendChild(wrap);
+    const cap = document.createElement('figcaption');
+    cap.className = 'vcap';
+    cap.innerHTML = `<span class="vlabel"></span>${tag ? '<span class="vtag"></span>' : ''}`;
+    cap.querySelector('.vlabel').textContent = label;
+    if (tag) cap.querySelector('.vtag').textContent = tag;
+    fig.appendChild(cap);
+    io.observe(v);
+    return fig;
+  }
+
+  function imageCell(src, label, tag, kind) {
+    const fig = document.createElement('figure');
+    fig.className = 'vcell';
+    const wrap = document.createElement('div');
+    const accent = kind === 'ours' || kind === 'generated';
+    wrap.className = 'vwrap' + (accent ? ' is-ours' : kind === 'gt' ? ' is-ref' : '');
+    if (BADGE[kind]) { const b = document.createElement('span'); b.className = 'vbadge' + (kind === 'gt' ? ' ref' : ''); b.textContent = BADGE[kind]; wrap.appendChild(b); }
+    const img = document.createElement('img');
+    img.src = src; img.alt = label; img.loading = 'lazy'; img.decoding = 'async';
+    img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;background:#F0EEEA;';
+    wrap.appendChild(img); fig.appendChild(wrap);
+    const cap = document.createElement('figcaption'); cap.className = 'vcap';
+    cap.innerHTML = `<span class="vlabel"></span>${tag ? '<span class="vtag"></span>' : ''}`;
+    cap.querySelector('.vlabel').textContent = label; if (tag) cap.querySelector('.vtag').textContent = tag;
+    fig.appendChild(cap); return fig;
+  }
+
+  function fillMixedGrid(node, items, cols) {
+    if (!node) return;
+    node.querySelectorAll('video').forEach((v) => { io.unobserve(v); v.pause(); v.removeAttribute('src'); v.load(); });
+    node.innerHTML = ''; node.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
+    items.forEach(([src, label, tag, kind, type]) => node.appendChild(type === 'image' ? imageCell(`./static/images/ood/${src}`, label, tag, kind) : cell(V + src, label, tag, kind)));
+  }
+
+  function fillGrid(node, items, cols) {
+    if (!node) return;
+    node.querySelectorAll('video').forEach((v) => { io.unobserve(v); v.pause(); v.removeAttribute('src'); v.load(); });
+    node.innerHTML = '';
+    node.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
+    items.forEach(([src, label, tag, kind]) => node.appendChild(cell(V + src, label, tag, kind)));
+  }
+
+  // ============================================================
+  // Keeping a comparison on one timeline.
+  // Tiles in a comparison come from the same episode, so they only read correctly when
+  // every one of them shows the same instant. Independent <video> elements drift apart:
+  // they start at different moments (lazy load + async play()), and each native loop
+  // re-entry adds its own seek delay, so the gap accumulates instead of cancelling out.
+  // Files being identical in length is not enough — playback has to be corrected.
+  // ============================================================
+  const SYNC = new Map();
+  const DUR_TOL = 0.02;   // relative duration difference still considered one timeline
+
+  function sameTimeline(a, b) {
+    return !!a.duration && !!b.duration &&
+           Math.abs(a.duration - b.duration) <= b.duration * DUR_TOL;
+  }
+
+  function alignTo(master, v) {
+    if (!master || v === master || !sameTimeline(v, master)) return;
+    const D = master.duration;
+    let d = v.currentTime - master.currentTime;
+    if (d > D / 2) d -= D;          // circular distance: a tile that already looped
+    if (d < -D / 2) d += D;         // is nudged forward, not yanked back
+    if (Math.abs(d) > 0.2) v.currentTime = master.currentTime;
+  }
+
+  // A tile that is already running on the same timeline as `ref`.
+  function peerFor(g, ref) {
+    return g.videos.find((v) => v !== ref && !v.paused && sameTimeline(v, ref)) || null;
+  }
+
+  function registerSync(key, videos) {
+    if (!videos.length) { SYNC.delete(key); return; }
+    const g = { videos };
+    SYNC.set(key, g);
+    // A tile that starts late catches up to a peer that is already running.
+    videos.forEach((v) => v.addEventListener('playing', () => alignTo(peerFor(g, v), v)));
+  }
+
+  // Single ticker for every group — drift correction, not a per-frame clock.
+  setInterval(() => {
+    SYNC.forEach((g) => {
+      // Cluster by duration first. A comparison can legitimately hold clips of different
+      // lengths — the baseline generators emit 49 frames where ours emits 153 — and those
+      // are separate timelines: forcing one onto the other would seek the short clip past
+      // its own end.
+      const clusters = [];
+      g.videos.forEach((v) => {
+        if (v.paused || !v.duration) return;
+        const c = clusters.find((k) => sameTimeline(v, k[0]));
+        if (c) c.push(v); else clusters.push([v]);
+      });
+      clusters.forEach((list) => list.forEach((v) => alignTo(list[0], v)));
+    });
+  }, 3000);
+
+  function syncFrom(key, selector) {
+    registerSync(key, [...document.querySelectorAll(selector)]);
+  }
+
+  function colsFor(n) {
+    if (window.innerWidth < 640) return n <= 2 ? n : 2;
+    if (window.innerWidth < 1024) return Math.min(n, 3);
+    return Math.min(n, n === 4 || n === 5 ? n : n <= 3 ? n : 3);
+  }
+
+  function makeTabs(node, entries, onPick) {
+    if (!node) return;
+    node.innerHTML = '';
+    entries.forEach((e, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'subtab' + (i === 0 ? ' active' : '');
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+      b.innerHTML = e.sub
+        ? `<span>${e.name}</span><span class="st-sub">${e.sub}</span>`
+        : `<span>${e.name}</span>`;
+      b.addEventListener('click', () => {
+        node.querySelectorAll('.subtab').forEach((x, j) => {
+          const on = j === i;
+          x.classList.toggle('active', on);
+          x.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        onPick(e, i);
+      });
+      node.appendChild(b);
+    });
+    node.setAttribute('role', 'tablist');
+    if (entries.length) onPick(entries[0], 0);
+  }
+
+  // ---- Generation section ----
+  // Only the generated rollout is shown; the i2v clip carries a "Generated" badge.
+  let curGen = SCENES[0];
+  function renderGen(scene) {
+    curGen = scene;
+    const mods = modsFor(scene.id);
+    const items = mods.map((m) => [`generation/${scene.dir}/ours/${m.k}.mp4`, m.label, m.tag,
+                                   m.k === 'video' ? 'generated' : null]);
+    if (TRACK_SCENES.generation.has(scene.dir)) {
+      items.push([`generation/${scene.dir}/ours/track.mp4`, '2D Point Tracking', 'From flow', 'ours']);
+    }
+    fillGrid(document.querySelector('[data-grid="gen"]'), items, colsFor(items.length));
+    syncFrom('gen', '[data-grid="gen"] video');
+    const t = document.querySelector('[data-task="gen"]');
+    if (t) t.textContent = scene.task;
+  }
+
+  // ---- Perception section ----
+  // UR5 stores the perception set by modality (depth/gt.mp4) because it doubles as the
+  // baseline comparison episode; every other scene stores it by variant (gt/depth.mp4).
+  function percSrc(scene, variant, modKey) {
+    if (scene.dir === 'ur5') {
+      if (modKey === 'video') return 'perception/ur5/video.mp4'; // shared input clip
+      return `perception/ur5/${modKey}/${variant}.mp4`;
+    }
+    return `perception/${scene.dir}/${variant}/${modKey}.mp4`;
+  }
+
+  let curPerc = SCENES[0];
+  function renderPerc(scene) {
+    curPerc = scene;
+    // The observed clip is the input to both rows — gt/video.mp4 and ours/video.mp4 are
+    // byte-identical, so it is shown once rather than duplicated across the comparison.
+    fillGrid(document.querySelector('[data-grid="perc-input"]'),
+      [[percSrc(scene, 'gt', 'video'), 'Observed RGB', 'Input', null]], 1);
+
+    const dense = modsFor(scene.id).filter((m) => m.k !== 'video');
+    const gtItems = dense.map((m) => [percSrc(scene, 'gt', m.k), m.label, m.tag, 'gt']);
+    const oursItems = dense.map((m) => [percSrc(scene, 'ours', m.k), m.label, m.tag, 'ours']);
+    if (scene.dir === 'ur5') {
+      gtItems.push(['perception/ur5/tracking/gt.mp4', '2D Point Tracking', 'From flow', 'gt']);
+      oursItems.push(['perception/ur5/tracking/ours.mp4', '2D Point Tracking', 'From flow', 'ours']);
+    } else if (TRACK_SCENES.perception.has(scene.dir)) {
+      oursItems.push([`perception/${scene.dir}/ours/track.mp4`, '2D Point Tracking', 'From flow', 'ours']);
+    }
+    fillGrid(document.querySelector('[data-grid="perc-gt"]'),
+      gtItems, colsFor(gtItems.length));
+    fillGrid(document.querySelector('[data-grid="perc-ours"]'),
+      oursItems, colsFor(oursItems.length));
+    syncFrom('perc', '[data-grid="perc-input"] video, [data-grid="perc-gt"] video, [data-grid="perc-ours"] video');
+    const t = document.querySelector('[data-task="perc"]');
+    if (t) t.textContent = scene.task;
+  }
+
+  // ---- Comparison sections ----
+  function renderPcmp(entry) {
+    const g = PCMP[entry.key];
+    const pcmpGrid = document.querySelector('[data-grid="pcmp"]');
+    const trackPanel = document.querySelector('[data-pcmp-track]');
+    const inputPanel = document.querySelector('[data-pcmp-input-panel]');
+    const isTrack = !!g.track;
+    if (trackPanel) {
+      const section = document.querySelector('#comparison-perception');
+      if (section && trackPanel.parentElement !== section) section.appendChild(trackPanel);
+      trackPanel.hidden = !isTrack;
+      if (isTrack) trackPanel.querySelectorAll('.reveal').forEach((el) => el.classList.add('in'));
+    }
+    if (pcmpGrid) pcmpGrid.parentElement.hidden = isTrack;
+    if (inputPanel) {
+      inputPanel.hidden = isTrack;
+      inputPanel.classList.toggle('pcmp-input-hidden', isTrack);
+    }
+    fillGrid(document.querySelector('[data-grid="pcmp-input"]'),
+      [[PCMP_INPUT, 'Observed RGB', 'Input', null]], 1);
+    if (!isTrack) {
+      fillGrid(pcmpGrid,
+        g.items.map(([f, label, kind]) => [g.dir + f, label, null, kind]),
+        colsFor(g.items.length));
+      syncFrom('pcmp', '[data-grid="pcmp-input"] video, [data-grid="pcmp"] video');
+    } else {
+      fillGrid(pcmpGrid, [], 1);
+      syncFrom('pcmp', '[data-grid="pcmp-input"] video');
+    }
+  }
+
+  function renderGcmp(entry) {
+    const g = GCMP[entry.key];
+    const c = colsFor(g.methods.length);
+    const wrap = document.querySelector('[data-gcmp-video]');
+    if (wrap) wrap.hidden = !g.withVideo;
+    if (g.withVideo) {
+      fillGrid(document.querySelector('[data-grid="gcmp-video"]'),
+        g.methods.map(([m, label, kind]) => [`${GCMP_DIR}${m}/video.mp4`, label, null, kind]), c);
+      const ml = document.querySelector('[data-gcmp-modlabel]');
+      if (ml) ml.textContent = g.label;
+    } else {
+      fillGrid(document.querySelector('[data-grid="gcmp-video"]'), [], 1);
+    }
+    fillGrid(document.querySelector('[data-grid="gcmp"]'),
+      g.methods.map(([m, label, kind]) => [`${GCMP_DIR}${m}/${g.mod}.mp4`, label, null, kind]), c);
+    syncFrom('gcmp', '[data-grid="gcmp-video"] video, [data-grid="gcmp"] video');
+  }
+
+  function renderOod(clip) {
+    const perceptionPanel = document.querySelector('[data-ood-perc]');
+    perceptionPanel.hidden = !!clip.dir && !clip.perc;
+    if (clip.dir) {
+      const base = `ood/${clip.dir}/`;
+      const generation = [
+        [`${base}video.mp4`, 'Generated RGB', 'GenSight', 'generated'],
+        [`${base}depth.mp4`, 'Depth readout', 'Unified readout', 'ours'],
+        [`${base}seg.mp4`, 'Embodiment segmentation', 'Unified readout', 'ours'],
+        [`${base}flow.mp4`, '2D flow', 'Unified readout', 'ours'],
+      ];
+      if (clip.track) generation.push([`${base}track.mp4`, '2D point tracking', 'From flow', 'ours']);
+      fillGrid(document.querySelector('[data-grid="ood-gen"]'), generation, colsFor(generation.length));
+      if (clip.perc) {
+        const perc = [
+          [`${base}perc/video.mp4`, 'Observed RGB', 'Input', null],
+          [`${base}perc/depth.mp4`, 'Depth', 'Perception', 'ours'],
+          [`${base}perc/seg.mp4`, 'Embodiment segmentation', 'Perception', 'ours'],
+          [`${base}perc/flow.mp4`, '2D flow', 'Perception', 'ours'],
+        ];
+        if (clip.track) perc.push([`${base}perc/track.mp4`, '2D point tracking', 'Perception', 'ours']);
+        fillGrid(document.querySelector('[data-grid="ood-perc"]'), perc, colsFor(perc.length));
+      } else {
+        fillGrid(document.querySelector('[data-grid="ood-perc"]'), [], 1);
+      }
+    } else {
+      const s = clip.stem;
+      const generation = [
+        [`${s}_cond.jpg`, 'Conditioning first frame', 'Input', null, 'image'],
+        [`ood/gen/${s}_gen.mp4`, 'Generated RGB', 'GenSight', 'generated'],
+        [`ood/gen_readout/${s}_depth.mp4`, 'Depth readout', 'Unified readout', 'ours'],
+        [`ood/gen_readout/${s}_seg.mp4`, 'Embodiment segmentation', 'Unified readout', 'ours'],
+        [`ood/gen_readout/${s}_flow.mp4`, '2D flow', 'Unified readout', 'ours'],
+      ];
+      if (clip.track) generation.push([`ood/gen_tracking/${s}_track.mp4`, '2D point tracking', 'From flow', 'ours']);
+      fillMixedGrid(document.querySelector('[data-grid="ood-gen"]'), generation, colsFor(generation.length));
+      const perception = [
+        [`ood_scene/videos/${s}_rgb.mp4`, 'Observed RGB', 'Input', null],
+        [`ood_scene/videos/${s}_depth.mp4`, 'Depth', 'Perception', 'ours'],
+        [`ood_scene/videos/${s}_seg.mp4`, 'Embodiment segmentation', 'Perception', 'ours'],
+        [`ood_scene/videos/${s}_flow.mp4`, '2D flow', 'Perception', 'ours'],
+      ];
+      if (clip.track) perception.push([`ood_scene/tracks/${s}_track.mp4`, '2D point tracking', 'Perception', 'ours']);
+      fillGrid(document.querySelector('[data-grid="ood-perc"]'), perception, colsFor(perception.length));
+    }
+    const section = document.querySelector('[data-ood-caption]');
+    if (section) section.textContent = clip.caption;
+    syncFrom('ood', '[data-grid="ood-gen"] video, [data-grid="ood-perc"] video');
+  }
+
+  function renderDomainOod() {
+    const scene = DOMAIN_OOD_SCENE;
+    const generation = [
+      [`generation/${scene.dir}/ours/video.mp4`, 'Generated RGB', 'GenSight', 'generated'],
+      [`generation/${scene.dir}/ours/depth.mp4`, 'Depth', 'Unified readout', 'ours'],
+      [`generation/${scene.dir}/ours/seg.mp4`, 'Embodiment mask', 'Unified readout', 'ours'],
+      [`generation/${scene.dir}/ours/flow.mp4`, '2D flow', 'Unified readout', 'ours'],
+    ];
+    if (TRACK_SCENES.generation.has(scene.dir)) {
+      generation.push([`generation/${scene.dir}/ours/track.mp4`, '2D point tracking', 'From flow', 'ours']);
+    }
+    const perception = [
+      [`perception/${scene.dir}/ours/depth.mp4`, 'Perception depth', 'Single-step', 'ours'],
+      [`perception/${scene.dir}/ours/seg.mp4`, 'Perception mask', 'Single-step', 'ours'],
+      [`perception/${scene.dir}/ours/flow.mp4`, 'Perception flow', 'Single-step', 'ours'],
+    ];
+    if (TRACK_SCENES.perception.has(scene.dir)) {
+      perception.push([`perception/${scene.dir}/ours/track.mp4`, '2D point tracking', 'From flow', 'ours']);
+    }
+    fillGrid(document.querySelector('[data-grid="domain-gen"]'), generation, colsFor(generation.length));
+    fillGrid(document.querySelector('[data-grid="domain-perc"]'), perception, colsFor(perception.length));
+    syncFrom('domain-ood', '[data-grid="domain-gen"] video, [data-grid="domain-perc"] video');
+  }
+
+  function setOodPanel(kind) {
+    document.querySelectorAll('[data-ood-panel]').forEach((panel) => { panel.hidden = panel.dataset.oodPanel !== kind; });
+    if (kind === 'domain') renderDomainOod();
+    else {
+      const active = document.querySelector('[data-tabs="ood"] .subtab.active');
+      renderOod(OOD_CLIPS[active ? [...active.parentNode.children].indexOf(active) : 0]);
+    }
+  }
+
+  document.querySelectorAll('.nav-dropdown-menu a[href="#results-scene"], .nav-dropdown-menu a[href="#results-domain"]').forEach((link) => {
+    link.addEventListener('click', () => {
+      const kind = link.getAttribute('href') === '#results-scene' ? 'scene' : 'domain';
+      const tab = document.querySelector(`[data-tabs="ood-kind"] .subtab:nth-child(${kind === 'scene' ? 1 : 2})`);
+      tab?.click();
+    });
+  });
+
+  // ---- 3D tracking ----
+  // One card per method holding both viewpoints, rather than two six-wide rows: at six
+  // columns each panel shrinks to roughly half its native width, and the comparison that
+  // matters here is head-on vs rotated *within* a method.
+  function trackCard(method, label, kind) {
+    const fig = document.createElement('figure');
+    fig.className = 'vcell';
+
+    const head = document.createElement('figcaption');
+    head.className = 'vcap';
+    head.style.padding = '0 3px 7px';
+    head.innerHTML = '<span class="vlabel"></span><span class="vtag"></span>';
+    head.querySelector('.vlabel').textContent = label;
+    head.querySelector('.vlabel').style.color = kind === 'ours' ? '#52CCBA' : '';
+    head.querySelector('.vtag').textContent = kind === 'ours' ? 'Ours' : '';
+    fig.appendChild(head);
+
+    [['view0', 'Head-on'], ['view1', 'Rotated 45°']].forEach(([view, viewLabel], i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'vwrap' + (kind === 'ours' ? ' is-ours' : '');
+      if (i) wrap.style.marginTop = '8px';
+      const badge = document.createElement('span');
+      badge.className = 'vbadge ref';
+      badge.textContent = viewLabel;
+      wrap.appendChild(badge);
+      const v = document.createElement('video');
+      v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'none';
+      v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
+      v.dataset.src = `${V}${TRACK_DIR}${view}/${method}.mp4`;
+      v.setAttribute('aria-label', `${label} — ${viewLabel}`);
+      wrap.appendChild(v);
+      addFullscreenButton(wrap, v, `${label} — ${viewLabel}`);
+      fig.appendChild(wrap);
+      io.observe(v);
+    });
+    return fig;
+  }
+
+  function renderTrack() {
+    fillGrid(document.querySelector('[data-grid="track-context"]'),
+      TRACK_CONTEXT.map(([f, l, t, k]) => [TRACK_DIR + f, l, t, k]),
+      window.innerWidth < 640 ? 1 : 3);
+
+    const node = document.querySelector('[data-grid="track-methods"]');
+    if (!node) return;
+    node.querySelectorAll('video').forEach((v) => { io.unobserve(v); v.pause(); v.removeAttribute('src'); v.load(); });
+    node.innerHTML = '';
+    const cols = window.innerWidth < 640 ? 1 : window.innerWidth < 1024 ? 2 : 3;
+    node.style.gridTemplateColumns = `repeat(${cols}, minmax(0,1fr))`;
+    TRACK_METHODS.forEach(([m, label, kind]) => node.appendChild(trackCard(m, label, kind)));
+    syncFrom('track', '[data-grid="track-context"] video, [data-grid="track-methods"] video');
+  }
+
+  // ---- Replay-in-sync ----
+  function replay(sel) {
+    document.querySelectorAll(sel).forEach((v) => {
+      if (!v.src && v.dataset.src) v.src = v.dataset.src;
+      v.currentTime = 0;
+      const p = v.play(); if (p) p.catch(() => {});
+    });
+  }
+  document.querySelector('[data-replay="gen"]')?.addEventListener('click',
+    () => replay('[data-grid="gen"] video'));
+  document.querySelector('[data-replay="perc"]')?.addEventListener('click',
+    () => replay('[data-grid="perc-input"] video, [data-grid="perc-gt"] video, [data-grid="perc-ours"] video'));
+  document.querySelector('[data-replay="track"]')?.addEventListener('click',
+    () => replay('[data-grid="track-context"] video, [data-grid="track-methods"] video'));
+
+  // ---- Boot ----
+  makeTabs(document.querySelector('[data-tabs="gen"]'),  SCENES, renderGen);
+  makeTabs(document.querySelector('[data-tabs="perc"]'), SCENES, renderPerc);
+  makeTabs(document.querySelector('[data-tabs="pcmp"]'),
+    Object.keys(PCMP).map((k) => ({ key:k, name:PCMP[k].label })), renderPcmp);
+  makeTabs(document.querySelector('[data-tabs="gcmp"]'),
+    Object.keys(GCMP).map((k) => ({ key:k, name:GCMP[k].label })), renderGcmp);
+  makeTabs(document.querySelector('[data-tabs="ood"]'), OOD_CLIPS, renderOod);
+  makeTabs(document.querySelector('[data-tabs="ood-kind"]'),
+    [{ key:'scene', name:'Scene OOD' }, { key:'domain', name:'Domain OOD' }],
+    (entry) => setOodPanel(entry.key));
+  renderDomainOod();
+
+  renderTrack();
+
+  // Re-flow grids on resize (column count is width-dependent).
+  let rt = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      renderGen(curGen); renderPerc(curPerc);
+      const pk = document.querySelector('[data-tabs="pcmp"] .subtab.active');
+      const gk = document.querySelector('[data-tabs="gcmp"] .subtab.active');
+      const pKeys = Object.keys(PCMP), gKeys = Object.keys(GCMP);
+      if (pk) renderPcmp({ key: pKeys[[...pk.parentNode.children].indexOf(pk)] });
+      if (gk) renderGcmp({ key: gKeys[[...gk.parentNode.children].indexOf(gk)] });
+      const ok = document.querySelector('[data-tabs="ood"] .subtab.active');
+      if (ok) renderOod(OOD_CLIPS[[...ok.parentNode.children].indexOf(ok)]);
+      renderDomainOod();
+      renderTrack();
+    }, 220);
+  });
+
+  // ---- Scroll reveal ----
+  const revealIO = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      if (e.isIntersecting) { e.target.classList.add('in'); revealIO.unobserve(e.target); }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -40px' });
+  document.querySelectorAll('.reveal').forEach((el) => revealIO.observe(el));
+
+  // ---- Navigation scroll spy ----
+  const navLinks = [...document.querySelectorAll('.nav-link[href^="#"]')];
+  const navSections = navLinks
+    .map((link) => ({ link, section: document.querySelector(link.getAttribute('href')) }))
+    .filter((item) => item.section);
+
+  function setActiveSection(id) {
+    navSections.forEach(({ link, section }) => {
+      const active = section.id === id;
+      link.classList.toggle('active', active);
+      if (active) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+  }
+
+  function updateActiveSection() {
+    const marker = 64 + Math.min(window.innerHeight * 0.22, 180);
+    let current = '';
+    navSections.forEach(({ section }) => {
+      if (section.getBoundingClientRect().top <= marker) current = section.id;
+    });
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+      current = navSections[navSections.length - 1]?.section.id || '';
+    }
+    setActiveSection(current);
+  }
+
+  let scrollSpyFrame = null;
+  window.addEventListener('scroll', () => {
+    if (scrollSpyFrame) return;
+    scrollSpyFrame = requestAnimationFrame(() => {
+      updateActiveSection();
+      scrollSpyFrame = null;
+    });
+  }, { passive:true });
+  window.addEventListener('resize', updateActiveSection);
+  navLinks.forEach((link) => link.addEventListener('click', () => {
+    setActiveSection(link.getAttribute('href').slice(1));
+  }));
+  updateActiveSection();
+</script>
+</body>
+</html>
